@@ -1,0 +1,1 @@
+# opencv_contrib-modules-aruco-samples
