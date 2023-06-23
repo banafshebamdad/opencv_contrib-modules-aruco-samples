@@ -1,0 +1,24 @@
+#
+# Banafshe Bamdad
+# Mo Jun 12 20:07:46
+#
+
+To run detect_markers.cpp:
+	$ g++ -o delete_me detect_markers.cpp  `pkg-config --cflags --libs opencv4`
+	$ g++ -o detect_marker detect_markers.cpp `pkg-config --cflags --libs opencv4`
+	
+	# Error while loading shared libraries: libopencv_highgui.so.407: cannot open shared object file: No such file or directory
+	Step 1: $ locate libopencv_core.so | grep libopencv_core.so
+		output: /usr/local/lib/libopencv_core.so
+	Step 2: $ sudo touch /etc/ld.so.conf.d/opencv.conf
+		Add this path to the file: /usr/local/lib
+	Step 3: $ sudo ldconfig -v
+
+	$ ./delete_me -v=/home/banafshe/Documents/kimera/colmap_Winti_HB/frames_from_rosbag/frame0123.jpg -d=0 -l=0.24 -r --refine=3
+
+	$ ./delete_me -v=/home/banafshe/Documents/kimera/colmap_Winti_HB/frames_from_rosbag/frame0134.jpg -d=0 -l=0.24 -r --refine=3
+	$ ./detect_marker -v=/home/banafshe/Documents/kimera/colmap_Winti_HB/frames_from_rosbag/frame0123.jpg -d=0 -l=0.24 -r --refine=3
+	
+	
+	
+
