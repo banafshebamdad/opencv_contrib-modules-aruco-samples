@@ -1,0 +1,18 @@
+%YAML:1.0
+---
+calibration_time: "May 22 2023"
+image_width: 848
+image_height: 480
+flags: 0
+camera_matrix: !!opencv-matrix
+   rows: 3
+   cols: 3
+   dt: d
+   data: [350.1025319713326, 0, 425.4870042368524, 0, 350.3254392847585, 242.7889397119158, 0, 0, 1]
+distortion_coefficients: !!opencv-matrix
+   rows: 1
+   cols: 4
+   dt: d
+   data: [0.3109034849184406, 0.0738058820840958, -0.12721669183158824, 0.16847841471545058]
+avg_reprojection_error: 0.0005635
+info: "The camera calibration parameters were obtained from Kalibr calibration process"
