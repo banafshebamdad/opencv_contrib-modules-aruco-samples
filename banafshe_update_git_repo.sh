@@ -2,12 +2,12 @@
 
 # Mi Jul 12, 2023 12:08:47 CET
 # Banafshe Bamdad
-# usage: source banafshe_update_repo.sh [commit_message]
+# usage: bash banafshe_update_repo.sh [commit_message]
 # This script push all changes into github repository
 
 if [ "$#" -eq 0 ]
 then
-  echo "Usage: source banafshe_update_repo.sh [commit_message]"
+  echo "Usage: bash banafshe_update_repo.sh [commit_message]"
   exit 1
 fi
 

@@ -285,6 +285,23 @@ int main(int argc, char *argv[]) {
                 aruco::interpolateCornersCharuco(markerCorners, markerIds, image, charucoboard,
                                                  charucoCorners, charucoIds, camMatrix, distCoeffs);
 
+        // Banafshe Bamdad
+        cout << "\nMarkerIds: " << endl;
+        for (int mi = 0; mi < markerIds.size(); mi++) {
+            cout << markerIds.at(mi) << ' ';
+        }
+
+        cout << "\nmarkerCorners: " << endl;
+        for (int mi = 0; mi < markerCorners.size(); mi++) {
+            for (int mj = 0; mj < markerCorners[mi].size(); mj++) {
+                cout << markerCorners[mi][mj] << " ";
+            }    
+            cout << endl;
+        }
+        cout << "\n" << endl;
+
+        // B.B
+
         // estimate charuco board pose
         bool validPose = false;
         if(camMatrix.total() != 0)
