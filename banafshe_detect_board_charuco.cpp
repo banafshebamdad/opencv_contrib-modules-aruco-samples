@@ -256,7 +256,9 @@ int main(int argc, char *argv[]) {
     double totalTime = 0;
     int totalIterations = 0;
 
+    int imgIndex = 0;
     while(inputVideo.grab()) {
+        imgIndex++;
         Mat image, imageCopy;
         inputVideo.retrieve(image);
 
@@ -320,7 +322,7 @@ int main(int argc, char *argv[]) {
             cout << "banafshe says rvec =" << rvec << endl;
             cout << "banafshe says tvec =" << tvec << endl;
 
-        imshow("out", imageCopy);
+        imshow(std::to_string(imgIndex), imageCopy);
         char key = (char)waitKey(waitTime);
         if(key == 27) break;
     }
