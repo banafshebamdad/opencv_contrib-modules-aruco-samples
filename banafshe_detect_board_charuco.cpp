@@ -42,6 +42,12 @@ the use of this software, even if advised of the possibility of such damage.
 #include <iostream>
 #include "aruco_samples_utility.hpp"
 
+// B.B
+#include <opencv2/imgproc.hpp>
+#include <string>
+#include <sstream>
+#include <iomanip>
+
 using namespace std;
 using namespace cv;
 
@@ -66,7 +72,27 @@ const char* keys  =
         "{r        |       | show rejected candidates too }";
 }
 
+/*
+ * Banafshe Bamdad
+ * Do Jul 13, 2023 09:00:33 CET
+ * Compute the center of ChArUco board
+*/
+Point2f centerOfCarucoBoard(vector< Point2f > charucoCorners) {
+    Point2f center(0, 0);
+    int numCorners = charucoCorners.size();
 
+    for (const Point2f& corner : charucoCorners) {
+        center.x += corner.x;
+        center.y += corner.y;
+    }
+
+    center.x /= numCorners;
+    center.y /= numCorners;
+
+    cout << "Center of ChArUco board: (" << center.x << ", " << center.y << ")" << endl;
+
+    return center;
+}
 /*
  * Banafshe Bamdad
  * Di Jul 4, 2023 12:0:06 CET
@@ -99,16 +125,31 @@ void createVideoFromFramess(const std::vector<std::string>& framePaths, const st
     std::cout << "Video created successfully: " << outputVideoPath << std::endl;
 }
 
+/*
+ * Banafshe Bamdad
+ * Do Jul 13, 2023 09:29:48 CET
+ * to display vectors on the image
+*/
+void displayVectorsOnTheImage (Mat imageCopy, Vec3d rvec, Vec3d tvec) {
+    string rvecText = "Rotation Vector: " + to_string(rvec[0]) + ", " + to_string(rvec[1]) + ", " + to_string(rvec[2]);
+    string tvecText = "Translation Vector: " + to_string(tvec[0]) + ", " + to_string(tvec[1]) + ", " + to_string(tvec[2]);
+
+    Point textPosition(10, 30); // Position to display the text on the image
+    Scalar textColor(0, 255, 0);
+    int textThickness = 2;
+    int textFont = FONT_HERSHEY_SIMPLEX;
+    double textScale = 0.8;
+
+    putText(imageCopy, rvecText, textPosition, textFont, textScale, textColor, textThickness);
+    putText(imageCopy, tvecText, Point(textPosition.x, textPosition.y + 30), textFont, textScale, textColor, textThickness);
+
+}
 /* 
  * Banafshe Bamdad
  * Di Jul 4, 2023 08:49:21 CET
  * I add processFile method to this script. This method get the first frame /full/path/and/name and an integer number that shows the number of frames starting from 
  * given frame. This method creates the full path of num_of_frames of consequtive frames and return them as a vector
 */
-
-#include <string>
-#include <sstream>
-#include <iomanip>
 
 // & the parameter baseFilename is passed by reference. So, the function directly accesses and multipulates the original object, without making a copy of it. 
 // This can be more efficient than passing by value, esp. when dealing with larg objects, as it avoids the overhead of copying the object.
@@ -152,6 +193,12 @@ std::vector<std::string> processFiles(const std::string& baseFileName, int num_o
 }
 
 int main(int argc, char *argv[]) {
+
+    // B.B to store previos translation vectors
+    Vec3d prevTvec;
+
+    // B.B to compte camera pose w.r.t ChArUco board
+    Vec3d cameraTvec, cameraRvec;
 
     CommandLineParser parser(argc, argv, keys);
     parser.about(about);
@@ -334,10 +381,53 @@ int main(int argc, char *argv[]) {
             aruco::drawDetectedCornersCharuco(imageCopy, charucoCorners, charucoIds, color);
         }
 
+        // B.B Pose estimation: determining the position and orientation of ChArUco board in 3D space relative to the camera's coordinate system. 
         if(validPose)
             cv::drawFrameAxes(imageCopy, camMatrix, distCoeffs, rvec, tvec, axisLength);
-            cout << "banafshe says rvec =" << rvec << endl;
-            cout << "banafshe says tvec =" << tvec << endl;
+            cout << "Banafshe: rotation vector (rvec) =" << rvec << endl;
+            cout << "Banafshe: translation vector (tvec) =" << tvec << endl;
+            cout << "\nThese vectors represent the position and orientation of the board in 3D space (w.r.t the camera coordinate system).\n" << endl;
+
+            // Banafshe bamdad
+            if (prevTvec != Vec3d()) {
+                // displacement between current and previous translation vector
+                Vec3d displacement = tvec - prevTvec;
+
+                // visualize camera motion
+                Point2f center = centerOfCarucoBoard(charucoCorners);
+                Point startPoint(center.x, center.y);
+                Point endPoint(center.x + displacement[0], center.y + displacement[1]);
+                Scalar color(0, 255, 0); // Green color
+                int thickness = 2;
+                int lineType = LINE_MAX;
+                int shift = 0;
+                double tipLength = 0.1;
+
+            }
+            // Update previous translation vector
+            prevTvec = tvec;
+
+            displayVectorsOnTheImage (imageCopy, rvec, tvec);
+
+            // Compute the pose of camera w.r.t the board
+            Mat cameraRmat;
+            Rodrigues(rvec, cameraRmat); // convert rotation vector to rotation matrix
+
+            // compute the inverse transformation to obtain the pose of the camera with respect to the ChArUco board. 
+            Mat invCameraRmat = cameraRmat.t(); // Transpose of the rotation matrix
+            Vec3d invCameraRvec;
+            Rodrigues(invCameraRmat, invCameraRvec); // Convert inverse rotation matrix to rotation vector
+            Mat invCameraTvecMat = -invCameraRmat * Mat(tvec); // Convert tvec to Mat and perform matrix multiplication
+            Vec3d invCameraTvec(invCameraTvecMat.ptr<double>());
+
+            // Alternatively, you can directly convert tvec to Vec3d without converting it to a Mat
+            // Vec3d invCameraTvec(-invCameraRmat * tvec);
+
+            // Print or display the inverse transformation
+            cout << "Inverse Rotation Vector (invCameraRvec): " << invCameraRvec << endl;
+            cout << "Inverse Translation Vector (invCameraTvec): " << invCameraTvec << endl;
+
+            // B.B
 
         imshow(std::to_string(imgIndex), imageCopy);
         char key = (char)waitKey(waitTime);
