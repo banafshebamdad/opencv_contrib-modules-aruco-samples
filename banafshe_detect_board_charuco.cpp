@@ -43,10 +43,11 @@ the use of this software, even if advised of the possibility of such damage.
 #include "aruco_samples_utility.hpp"
 
 // B.B
-#include <opencv2/imgproc.hpp>
-#include <string>
-#include <sstream>
+#include <fstream>
 #include <iomanip>
+#include <opencv2/imgproc.hpp>
+#include <sstream>
+#include <string>
 
 using namespace std;
 using namespace cv;
@@ -71,6 +72,10 @@ const char* keys  =
         "{rs       |       | Apply refind strategy }"
         "{r        |       | show rejected candidates too }";
 }
+
+// B.B
+std::string wrkdir = "/home/banafshe/Desktop/";
+bool show_frames = false;
 
 /*
  * Banafshe Bamdad
@@ -192,6 +197,34 @@ std::vector<std::string> processFiles(const std::string& baseFileName, int num_o
     return fileNames;
 }
 
+/*
+ * Banafshe Bamdad
+ * Do Jul 13, 2023 15:08:59 CET
+ * to save the estimated pose in a file
+*/
+void saveEstimatedPoses (vector<Vec3d> cameraTranslations, vector<Vec3d> cameraRotations) {
+    std::string filepath = wrkdir + "poses.txt";
+    std::ofstream outputFile(filepath);
+    if (outputFile.is_open()) {
+        for (size_t i = 0; i < cameraTranslations.size(); i++) {
+            const auto& translation = cameraTranslations[i];
+            const auto& rotation = cameraRotations[i];
+
+            for (int j = 0; j < translation.rows; j++ ) {
+                outputFile << translation(j) << " ";
+            }
+            for (int j = 0; j < rotation.rows; j++ ) {
+                outputFile << rotation(j) << " ";
+            }
+            outputFile << "\n";
+        }
+        outputFile.close();
+        std::cout << "poses written successfully in " << filepath << endl;
+    } else {
+        std::cerr << "Error opening " << filepath << endl;
+    }
+}
+
 int main(int argc, char *argv[]) {
 
     // B.B to store previos translation vectors
@@ -273,7 +306,22 @@ int main(int argc, char *argv[]) {
      /* Banafshe Bamdad */
     
     int num_of_frames;
+    std::string user_input_show_frames = "N";
     
+    std::cout << "Enter working directory to save the output files or press Enter for default. Default value is /home/banafshe/Desktop:";
+    std::getline(std::cin, wrkdir);
+    if (wrkdir.empty()) {
+        wrkdir = "/home/banafshe/Desktop/";
+    }
+    std::cout << "\n working directory: " << wrkdir << endl;
+
+    std::cout << "Show frames (N/y)? Default is No.";
+    std::getline(std::cin, user_input_show_frames);
+    if (user_input_show_frames == "Y" || user_input_show_frames == "y") {
+        show_frames = true;
+    } else {
+        show_frames = false;
+    }
     std::cout << "Enter the number of consecutive frames to process: ";
     std::cin >> num_of_frames;
 
@@ -282,7 +330,7 @@ int main(int argc, char *argv[]) {
         std::cout << element << std::endl;
     }
     
-    std::string outputVideoPath = "/home/banafshe/Desktop/output.avi";
+    std::string outputVideoPath = wrkdir + "video_from_selected_frames.avi";
     double frameRate = 30.0;
 
     createVideoFromFramess(fileNames, outputVideoPath, frameRate);
@@ -302,6 +350,10 @@ int main(int argc, char *argv[]) {
     
     double totalTime = 0;
     int totalIterations = 0;
+
+    // Banafshe Bamdad: to save the trajectory of a camera
+    vector<Vec3d> cameraTranslations;
+    vector<Vec3d> cameraRotations;
 
     int imgIndex = 0;
     while(inputVideo.grab()) {
@@ -388,6 +440,10 @@ int main(int argc, char *argv[]) {
             cout << "Banafshe: translation vector (tvec) =" << tvec << endl;
             cout << "\nThese vectors represent the position and orientation of the board in 3D space (w.r.t the camera coordinate system).\n" << endl;
 
+            // store the camera pose information to store trajectory
+            cameraTranslations.push_back(tvec);
+            cameraRotations.push_back(rvec);
+
             // Banafshe bamdad
             if (prevTvec != Vec3d()) {
                 // displacement between current and previous translation vector
@@ -424,15 +480,37 @@ int main(int argc, char *argv[]) {
             // Vec3d invCameraTvec(-invCameraRmat * tvec);
 
             // Print or display the inverse transformation
-            cout << "Inverse Rotation Vector (invCameraRvec): " << invCameraRvec << endl;
-            cout << "Inverse Translation Vector (invCameraTvec): " << invCameraTvec << endl;
+            // cout << "Inverse Rotation Vector (invCameraRvec): " << invCameraRvec << endl;
+            // cout << "Inverse Translation Vector (invCameraTvec): " << invCameraTvec << endl;
 
             // B.B
 
-        imshow(std::to_string(imgIndex), imageCopy);
-        char key = (char)waitKey(waitTime);
-        if(key == 27) break;
+        if (show_frames) { // B.B
+            imshow(std::to_string(imgIndex), imageCopy);
+            char key = (char)waitKey(waitTime);
+            if(key == 27) break;
+        } else {
+            std::cout << "The valuse of show frames is: " << show_frames << endl;
+        }
     }
+
+    // Banafshe Bamdad
+    // Vec3d initialCharucoPos = cameraTranslations[0];  // Initial Charuco board position
+    // vector<Vec3d> cameraTrajectory;                   // Stores camera trajectory
+
+    // // Compute the camera trajectory relative to the Charuco board
+    // for (const auto& translation : cameraTranslations) {
+    //     Vec3d relativeTranslation = translation - initialCharucoPos;
+    //     cameraTrajectory.push_back(relativeTranslation);
+    // }
+
+    // B.B auto: to automatically deduce the type of the elements in the vector
+    // for (const auto& translation : cameraTranslations) {
+    //     cout << "\n Halli hallo: " << translation << endl;
+    // }
+
+    saveEstimatedPoses (cameraTranslations, cameraRotations);
+    // B.B
 
     return 0;
 }

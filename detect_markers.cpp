@@ -179,6 +179,8 @@ int main(int argc, char *argv[]) {
             // Calculate pose for each marker
             for (size_t  i = 0; i < nMarkers; i++) {
                 solvePnP(objPoints, corners.at(i), camMatrix, distCoeffs, rvecs.at(i), tvecs.at(i));
+
+                cout << "Banafshe: rvecs.at(" << ids.at(i) << ")"  << rvecs.at(i) << " , tvecs.at(" << i << "): " << tvecs.at(i) << endl;
             }
         }
 
