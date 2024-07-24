@@ -1,42 +1,7 @@
 /* Banafshe Bamdad
-* Usage e.g: ./banafshe_detect_board_charuco -w=8 -h=8 -sl=0.075 -ml=0.055 -d=5 -dp=detector_params.yml -v=/home/banafshe/Documents/colmap_Winti_HB_RPG_D435i/infra_frames_from_rosbag/frame0352.jpg -c=banafshe_tutorial_camera_charuco.yml
-*/
-/*
-By downloading, copying, installing or using the software you agree to this
-license. If you do not agree to this license, do not download, install,
-copy or use the software.
-
-                          License Agreement
-               For Open Source Computer Vision Library
-                       (3-clause BSD License)
-
-Copyright (C) 2013, OpenCV Foundation, all rights reserved.
-Third party copyrights are property of their respective owners.
-
-Redistribution and use in source and binary forms, with or without modification,
-are permitted provided that the following conditions are met:
-
-  * Redistributions of source code must retain the above copyright notice,
-    this list of conditions and the following disclaimer.
-
-  * Redistributions in binary form must reproduce the above copyright notice,
-    this list of conditions and the following disclaimer in the documentation
-    and/or other materials provided with the distribution.
-
-  * Neither the names of the copyright holders nor the names of the contributors
-    may be used to endorse or promote products derived from this software
-    without specific prior written permission.
-
-This software is provided by the copyright holders and contributors "as is" and
-any express or implied warranties, including, but not limited to, the implied
-warranties of merchantability and fitness for a particular purpose are
-disclaimed. In no event shall copyright holders or contributors be liable for
-any direct, indirect, incidental, special, exemplary, or consequential damages
-(including, but not limited to, procurement of substitute goods or services;
-loss of use, data, or profits; or business interruption) however caused
-and on any theory of liability, whether in contract, strict liability,
-or tort (including negligence or otherwise) arising in any way out of
-the use of this software, even if advised of the possibility of such damage.
+* Usage: 
+* $ g++ -std=c++17 -o banafshe_detect_board_charuco_with_timestamp banafshe_detect_board_charuco_with_timestamp.cpp `pkg-config --cflags --libs opencv4`
+* $ ./banafshe_detect_board_charuco_with_timestamp -w=8 -h=8 -sl=0.075 -ml=0.055 -d=5 -dp=detector_params.yml -v=/home/banafshe/Desktop/demonstration/colmap_ws/frames_by_cv/1687071888178114423.jpg -c=banafshe_tutorial_camera_charuco.yml
 */
 
 #include <opencv2/highgui.hpp>
@@ -46,12 +11,17 @@ the use of this software, even if advised of the possibility of such damage.
 #include "aruco_samples_utility.hpp"
 
 // B.B
+#include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <opencv2/imgproc.hpp>
 #include <sstream>
 #include <string>
+
+// B.B
+namespace fs = std::filesystem;
 
 using namespace std;
 using namespace cv;
@@ -173,53 +143,66 @@ void displayVectorsOnTheImage (Mat imageCopy, Vec3d rvec, Vec3d tvec) {
     putText(imageCopy, tvecText, Point(textPosition.x, textPosition.y + 30), textFont, textScale, textColor, textThickness);
 
 }
-/* 
+
+/*
  * Banafshe Bamdad
- * Di Jul 4, 2023 08:49:21 CET
- * This method get the first frame /full/path/and/name and an integer number that shows the number of frames starting from 
+ * Mit Jul 19, 2023 12:47:07 CET
+ * Considering that the file name is equal to the timestamp, 
+ * this method returns the file name without extension and path.
+ */
+
+std::string get_timestamp(std::string full_path) {
+
+    fs::path file_path(full_path);
+    // std::string filename = file_path.filename().string();
+    std::string filename_without_extension = file_path.stem().string();
+
+    return filename_without_extension;
+}
+
+/*
+ * Banafshe Bamdad
+ * Mi Jul 19, 2023 11:31:00 CET
+ * This method takes the first frame /full/path/and/name and an integer number that shows the number of frames starting from 
  * given frame. This method creates the full path of num_of_frames of consequtive frames and return them as a vector
-*/
+ */
 
-// & the parameter baseFilename is passed by reference. So, the function directly accesses and multipulates the original object, without making a copy of it. 
-// This can be more efficient than passing by value, esp. when dealing with larg objects, as it avoids the overhead of copying the object.
-// baseFileName is a reference to a std::string object.
-// using const ensures that the baseFileName object is not modified within the processFile function
-std::vector<std::string> processFiles(const std::string& baseFileName, int num_of_frames, std::vector<int>& frame_ids) {
-    std::string folderPath, frameName, fileExtension;
-    size_t pos = baseFileName.find_last_of("/\\");
-    
-    //std::string::npos is a static member constant of the std::string class in C++. 
-    // It represents a special value that is typically used to indicate the absence or invalidity of a position or index within a string.
-    if (pos != std::string::npos) {
-        folderPath = baseFileName.substr(0, pos + 1);
-        
-        frameName = baseFileName.substr(pos + 1);
-    }
-    
-    pos = baseFileName.find_last_of(".");
-    if (pos != std::string::npos) {
-        fileExtension = baseFileName.substr(pos);
-    }
-    
-    // Extract the frame number
-    
-    size_t start_pos = frameName.find_first_of("0123456789");
-    size_t end_pos = frameName.find_last_of(".");
-    size_t length = end_pos - start_pos;
-    string frame_num_str = frameName.substr(start_pos, length);
+std::vector<std::string> get_N_images(const std::string& start_image_path, int N, std::vector<std::string>& timestamps ) {
+    std::vector<std::string> image_paths;
 
-    int frameNumber = std::stoi(frame_num_str);
-    
-    std::vector<std::string> fileNames;
-    for (int i = frameNumber; i < frameNumber + num_of_frames; i++) {
-        std::ostringstream fileName;
-        fileName << folderPath << "frame" << std::setfill('0') << std::setw(4) << i << fileExtension;
-        str:string file_to_process = fileName.str();
-        fileNames.push_back(file_to_process);
-        frame_ids.push_back(i);
+    // Extract the directory and filename from the start_image_path
+    fs::path dir_path = fs::path(start_image_path).parent_path();
+    std::string filename = fs::path(start_image_path).filename().string();
+
+    // Read the directory and store all the image file paths in image_paths
+    for (const auto& entry : fs::directory_iterator(dir_path)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".jpg") {
+            image_paths.push_back(entry.path().string());
+        }
     }
-    
-    return fileNames;
+
+    // Sort the image paths in ascending order
+    std::sort(image_paths.begin(), image_paths.end());
+
+    // Find the iterator pointing to the start_image_path in the sorted list
+    auto it = std::find(image_paths.begin(), image_paths.end(), start_image_path);
+    if (it == image_paths.end()) {
+        std::cerr << "Start image not found in the directory.\n";
+        return std::vector<std::string>();
+    }
+
+    // Calculate the start index of N images after the start point
+    size_t start_idx = std::distance(image_paths.begin(), it);
+    size_t end_idx = std::min(start_idx + static_cast<size_t>(N), image_paths.size());
+
+    // Extract the image paths of N images after the start point, including the start_image_path
+    std::vector<std::string> result(image_paths.begin() + start_idx, image_paths.begin() + end_idx);
+    for (size_t i = 0; i < result.size(); i++) {
+        std::cout << result[i] << endl;
+        timestamps.push_back(get_timestamp(result[i]));
+    }
+
+    return result;
 }
 
 /*
@@ -227,7 +210,7 @@ std::vector<std::string> processFiles(const std::string& baseFileName, int num_o
  * Do Jul 13, 2023 15:08:59 CET
  * to save the estimated pose in a file
 */
-void saveEstimatedPoses (vector<Vec3d> cameraTranslations, vector<Vec3d> cameraRotations, std::vector<int> frame_ids) {
+void saveEstimatedPoses (vector<Vec3d> cameraTranslations, vector<Vec3d> cameraRotations, std::vector<std::string> timestamps) {
     std::string filepath = wrkdir + "/stamped_traj_estimate.txt"; // @TODO Banafshe Bamdad Sa Jul 15, 2023 09:16:10 CET: Add path separator based on operating system, instead of hard-coding
     std::ofstream outputFile(filepath);
     if (outputFile.is_open()) {
@@ -235,7 +218,7 @@ void saveEstimatedPoses (vector<Vec3d> cameraTranslations, vector<Vec3d> cameraR
             const auto& translation = cameraTranslations[i];
             const auto& rotation = cameraRotations[i];
 
-            outputFile << frame_ids[i] << " ";
+            outputFile << timestamps[i] << " ";
 
             for (int j = 0; j < translation.rows; j++ ) {
                 outputFile << translation(j) << " ";
@@ -353,12 +336,11 @@ int main(int argc, char *argv[]) {
     std::cout << "Enter the number of consecutive frames to process: ";
     std::cin >> num_of_frames;
 
-    // to store frameIds, these ids will be used ad timestamp value to match poses generated by COLMAP
-    std::vector<int> frame_ids;
+    std::vector<std::string> timestamps;
 
-    std::vector<std::string> fileNames = processFiles(video, num_of_frames, frame_ids);
+    std::vector<std::string> fileNames = get_N_images(video, num_of_frames, timestamps);
     
-    std::string outputVideoPath = wrkdir + "video_from_selected_frames.avi";
+    std::string outputVideoPath = wrkdir + "/video_from_selected_frames.avi";
     double frameRate = 30.0;
 
     createVideoFromFramess(fileNames, outputVideoPath, frameRate);
@@ -413,19 +395,19 @@ int main(int argc, char *argv[]) {
                                                  charucoCorners, charucoIds, camMatrix, distCoeffs);
 
         // Banafshe Bamdad
-        cout << "\nMarkerIds: " << endl;
-        for (int mi = 0; mi < markerIds.size(); mi++) {
-            cout << markerIds.at(mi) << ' ';
-        }
+        // cout << "\nMarkerIds: " << endl;
+        // for (int mi = 0; mi < markerIds.size(); mi++) {
+        //     cout << markerIds.at(mi) << ' ';
+        // }
 
-        cout << "\nmarkerCorners: " << endl;
-        for (int mi = 0; mi < markerCorners.size(); mi++) {
-            for (int mj = 0; mj < markerCorners[mi].size(); mj++) {
-                cout << markerCorners[mi][mj] << " ";
-            }    
-            cout << endl;
-        }
-        cout << "\n" << endl;
+        // cout << "\nmarkerCorners: " << endl;
+        // for (int mi = 0; mi < markerCorners.size(); mi++) {
+        //     for (int mj = 0; mj < markerCorners[mi].size(); mj++) {
+        //         cout << markerCorners[mi][mj] << " ";
+        //     }    
+        //     cout << endl;
+        // }
+        // cout << "\n" << endl;
 
         // B.B
 
@@ -504,17 +486,11 @@ int main(int argc, char *argv[]) {
             Mat invCameraTvecMat = -invCameraRmat * Mat(tvec); // Convert tvec to Mat and perform matrix multiplication
             Vec3d invCameraTvec(invCameraTvecMat.ptr<double>());
 
-            // Alternatively, you can directly convert tvec to Vec3d without converting it to a Mat
-            // Vec3d invCameraTvec(-invCameraRmat * tvec);
-
-            // Print or display the inverse transformation
-            // cout << "Inverse Rotation Vector (invCameraRvec): " << invCameraRvec << endl;
-            // cout << "Inverse Translation Vector (invCameraTvec): " << invCameraTvec << endl;
-
             // B.B
 
         if (show_frames) { // B.B
-            imshow(std::to_string(imgIndex), imageCopy);
+            // imshow(std::to_string(imgIndex), imageCopy);
+            imshow("Frame", imageCopy);
             char key = (char)waitKey(waitTime);
             if(key == 27) break;
         } else {
@@ -522,22 +498,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // Banafshe Bamdad
-    // Vec3d initialCharucoPos = cameraTranslations[0];  // Initial Charuco board position
-    // vector<Vec3d> cameraTrajectory;                   // Stores camera trajectory
-
-    // // Compute the camera trajectory relative to the Charuco board
-    // for (const auto& translation : cameraTranslations) {
-    //     Vec3d relativeTranslation = translation - initialCharucoPos;
-    //     cameraTrajectory.push_back(relativeTranslation);
-    // }
-
-    // B.B auto: to automatically deduce the type of the elements in the vector
-    // for (const auto& translation : cameraTranslations) {
-    //     cout << "\n Halli hallo: " << translation << endl;
-    // }
-
-    saveEstimatedPoses (cameraTranslations, cameraRotations, frame_ids);
+    saveEstimatedPoses (cameraTranslations, cameraRotations, timestamps);
     // B.B
 
     return 0;

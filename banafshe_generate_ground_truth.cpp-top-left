@@ -1,0 +1,309 @@
+
+/*
+ * Author: Banafshe Bamdad
+ * Created on Mon May 20 2024 19:16:31 CET
+ *
+ * Usage: 
+ *  g++ -std=c++17 banafshe_generate_ground_truth.cpp -o banafshe_generate_ground_truth `pkg-config --cflags --libs opencv4`
+ */
+
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <map>
+#include <opencv2/aruco.hpp>
+#include <opencv2/opencv.hpp>
+#include <sstream>
+#include <vector>
+
+namespace fs = std::filesystem;
+
+cv::Vec4d rotationMatrixToQuaternion(const cv::Mat& R) {
+    cv::Vec4d q;
+    double trace = R.at<double>(0, 0) + R.at<double>(1, 1) + R.at<double>(2, 2);
+    if (trace > 0) {
+        double s = 0.5 / sqrt(trace + 1.0);
+        q[3] = 0.25 / s;
+        q[0] = (R.at<double>(2, 1) - R.at<double>(1, 2)) * s;
+        q[1] = (R.at<double>(0, 2) - R.at<double>(2, 0)) * s;
+        q[2] = (R.at<double>(1, 0) - R.at<double>(0, 1)) * s;
+    } else {
+        if (R.at<double>(0, 0) > R.at<double>(1, 1) && R.at<double>(0, 0) > R.at<double>(2, 2)) {
+            double s = 2.0 * sqrt(1.0 + R.at<double>(0, 0) - R.at<double>(1, 1) - R.at<double>(2, 2));
+            q[3] = (R.at<double>(2, 1) - R.at<double>(1, 2)) / s;
+            q[0] = 0.25 * s;
+            q[1] = (R.at<double>(0, 1) + R.at<double>(1, 0)) / s;
+            q[2] = (R.at<double>(0, 2) + R.at<double>(2, 0)) / s;
+        } else if (R.at<double>(1, 1) > R.at<double>(2, 2)) {
+            double s = 2.0 * sqrt(1.0 + R.at<double>(1, 1) - R.at<double>(0, 0) - R.at<double>(2, 2));
+            q[3] = (R.at<double>(0, 2) - R.at<double>(2, 0)) / s;
+            q[0] = (R.at<double>(0, 1) + R.at<double>(1, 0)) / s;
+            q[1] = 0.25 * s;
+            q[2] = (R.at<double>(1, 2) + R.at<double>(2, 1)) / s;
+        } else {
+            double s = 2.0 * sqrt(1.0 + R.at<double>(2, 2) - R.at<double>(0, 0) - R.at<double>(1, 1));
+            q[3] = (R.at<double>(1, 0) - R.at<double>(0, 1)) / s;
+            q[0] = (R.at<double>(0, 2) + R.at<double>(2, 0)) / s;
+            q[1] = (R.at<double>(1, 2) + R.at<double>(2, 1)) / s;
+            q[2] = 0.25 * s;
+        }
+    }
+    return q;
+}
+
+// Converts rotation and translation vectors to a 4x4 transformation matrix
+/*
+ * T(cv::Rect(3, 0, 1, 3)): Creates a submatrix of T using the cv::Rect function. 
+ * 3: The x-coordinate of the top-left corner of the submatrix (the fourth column).
+ * 0: The y-coordinate of the top-left corner of the submatrix (the first row).
+ * 1: The width of the submatrix (one column).
+ * 3: The height of the submatrix (three rows).
+*/
+cv::Mat createTransformationMatrix(const cv::Vec3d& rvec, const cv::Vec3d& tvec) {
+    cv::Mat R;
+    cv::Rodrigues(rvec, R);
+
+    cv::Mat T = cv::Mat::eye(4, 4, R.type());
+    R.copyTo(T(cv::Rect(0, 0, 3, 3)));
+    cv::Mat(tvec).copyTo(T(cv::Rect(3, 0, 1, 3)));
+    return T;
+}
+
+// Draw a small circle at the principal point to represent the camera's origin
+void drawCameraOrigin(cv::Mat& image, const cv::Mat& cameraMatrix) {
+    double cx = cameraMatrix.at<double>(0, 2);
+    double cy = cameraMatrix.at<double>(1, 2);
+
+    cv::circle(image, cv::Point(static_cast<int>(cx), static_cast<int>(cy)), 10, cv::Scalar(0, 0, 255), -1); // Red color
+
+    std::string text = "Principal Point";
+    int fontFace = cv::FONT_HERSHEY_SIMPLEX;
+    double fontScale = 0.5;
+    int thickness = 1;
+    int baseline = 0;
+    cv::Size textSize = cv::getTextSize(text, fontFace, fontScale, thickness, &baseline);
+
+    // Position the text below the circle
+    cv::Point textOrg(static_cast<int>(cx) + 15, static_cast<int>(cy) - 15);
+
+    cv::putText(image, text, textOrg, fontFace, fontScale, cv::Scalar(0, 0, 255), thickness);
+}
+
+void drawCameraAxes(cv::Mat& image, const cv::Mat& cameraMatrix, double length = 0.2) {
+    // Extract the principal point (cx, cy) from the camera matrix
+    double cx = cameraMatrix.at<double>(0, 2);
+    double cy = cameraMatrix.at<double>(1, 2);
+
+    // Define the camera coordinate axes in 3D
+    std::vector<cv::Point3d> axesPoints;
+    axesPoints.push_back(cv::Point3d(0, 0, 0));       // Origin
+    axesPoints.push_back(cv::Point3d(length, 0, 0));  // X-axis
+    axesPoints.push_back(cv::Point3d(0, length, 0));  // Y-axis
+    axesPoints.push_back(cv::Point3d(0, 0, length));  // Z-axis
+
+    // Project 3D points to 2D image points
+    std::vector<cv::Point2d> imagePoints;
+    cv::projectPoints(axesPoints, cv::Vec3d(0, 0, 0), cv::Vec3d(0, 0, 0), cameraMatrix, cv::Mat::zeros(4, 1, CV_64F), imagePoints);
+
+    // Draw the camera's principal point
+    cv::circle(image, cv::Point(static_cast<int>(cx), static_cast<int>(cy)), 5, cv::Scalar(0, 0, 255), -1); // Red color
+
+    // Draw the camera axes
+    cv::line(image, imagePoints[0], imagePoints[1], cv::Scalar(0, 0, 255), 2); // X-axis (red)
+    cv::line(image, imagePoints[0], imagePoints[2], cv::Scalar(0, 255, 0), 2); // Y-axis (green)
+    cv::line(image, imagePoints[0], imagePoints[3], cv::Scalar(255, 0, 0), 2); // Z-axis (blue)
+
+    std::string text = "The projection of the camera principal point";
+    int fontFace = cv::FONT_HERSHEY_SIMPLEX;
+    double fontScale = 0.5;
+    int thickness = 1;
+    cv::putText(image, text, cv::Point(static_cast<int>(cx) + 15, static_cast<int>(cy) - 15), fontFace, fontScale, cv::Scalar(0, 0, 255), thickness);
+}
+
+
+void saveAnnotatedImage(const cv::Mat& image, const std::vector<int>& ids, const std::vector<std::vector<cv::Point2f>>& corners, const std::vector<cv::Vec3d>& rvecs, const std::vector<cv::Vec3d>& tvecs, const cv::Mat& cameraMatrix, const cv::Mat& distCoeffs, const std::string& outputPath) {
+    cv::Mat annotatedImage = image.clone();
+
+    for (size_t i = 0; i < ids.size(); ++i) {
+        cv::aruco::drawDetectedMarkers(annotatedImage, corners, ids);
+
+        /*
+         The Z-axis appears to go to infinity (is excessively long), it typically indicates an issue 
+         with the scale of the length parameter relative to the units of the translation vectors (tvecs) 
+         obtained from pose estimation.*/
+        cv::drawFrameAxes(annotatedImage, cameraMatrix, distCoeffs, rvecs[i], tvecs[i], 1.0);
+    }
+
+    // drawCameraOrigin(annotatedImage, cameraMatrix);
+    drawCameraAxes(annotatedImage, cameraMatrix);
+
+    cv::imwrite(outputPath, annotatedImage);
+}
+
+int main() {
+
+    // Initialization
+    // std::string imageDirectory = "/media/banafshe/c1710f43-f3d3-4655-aa3e-24baac02544e/home/banafshe/Desktop/junk/images/undistorted_microsec";
+    std::string imageDirectory = "/media/banafshe/c1710f43-f3d3-4655-aa3e-24baac02544e/home/banafshe/Desktop/junk/images/5_undisorted";
+    std::string outputDirectory = imageDirectory + "/annotated_images";
+    std::string posesFile = outputDirectory + "/ground_truth.txt";
+
+    std::vector<fs::path> imagePaths;
+    for (const auto& entry : fs::directory_iterator(imageDirectory)) {
+        imagePaths.push_back(entry.path());
+    }
+    std::sort(imagePaths.begin(), imagePaths.end());
+
+    if (!fs::exists(outputDirectory)) {
+        fs::create_directory(outputDirectory);
+    }
+
+    std::ofstream posesOutput(posesFile);
+    if (!posesOutput.is_open()) {
+        std::cerr << "Unable to open poses file for writing: " << posesFile << std::endl;
+        return -1;
+    }
+
+    posesOutput << "# timestamp tx ty tz qx qy qz qw\n";
+
+    // Define marker positions in global coordinate system
+    // The markers are placed in a straight line with a known distance between them.
+    std::map<int, cv::Vec3d> markerPositions;
+    /*
+     I placed the markers (20 cm, printed on A4 paper) on the top-left side of the tiles, 
+     with a length of 54 cm, 4 tiles apart, except at the end of the trajectory where they are every 2 tiles. 
+     Marker IDs start from 40 down to 21 in one direction, and from 20 to 0 on the return. 
+     I consider the top corner of Marker ID=40 as the origin of the global frame.
+     */
+    double distanceBetweenMarkers = 2.16; // Distance in meters 54 x 4 (cm)
+    for (int i = 0; i <= 19; ++i) {
+        int markerId = 40 - i;
+        markerPositions[markerId] = cv::Vec3d(i * distanceBetweenMarkers, 0, 0); // !!! SUSPECT !!!
+        markerPositions[markerId] = cv::Vec3d(0, - i * distanceBetweenMarkers, 0);
+    }
+
+    // for (const auto& entry : markerPositions) {
+    //     int markerId = entry.first;
+    //     cv::Vec3d position = entry.second;
+    //     std::cout << "Marker ID: " << markerId
+    //               << " Position: [" << position[0] << ", " << position[1] << ", " << position[2] << "]"
+    //               << std::endl;
+    // }
+    // std::cin.get();
+
+    // My images are already undistorted and I do not need to apply any additional distortion correction.
+    // So, there is no distortion to account for during the pose estimation process.
+    // cv::Mat cameraMatrix = cv::Mat::eye(3, 3, CV_64F);
+    cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) << 610.638, 0, 717.441, 
+                                                     0, 610.638, 710.694, 
+                                                     0, 0, 1);
+    cv::Mat distCoeffs = cv::Mat::zeros(4, 1, CV_64F);
+
+    cv::aruco::Dictionary dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_7X7_50);
+    cv::aruco::DetectorParameters parameters = cv::aruco::DetectorParameters();
+    cv::aruco::ArucoDetector detector(dictionary, parameters);
+
+    for (const auto& imagePath : imagePaths) {
+    // for (const auto& entry : fs::directory_iterator(imageDirectory)) {
+        // std::string imagePath = entry.path().string();
+        std::string imagePathStr = imagePath.string();
+        cv::Mat image = cv::imread(imagePathStr);
+        // cv::Mat image = cv::imread(imagePath);
+        cv::Mat outputImage = image.clone();
+
+        if (image.empty()) {
+            std::cerr << "Image not found or unable to load: " << imagePath << std::endl;
+            continue;
+        }
+
+        // Detect ArUco markers in the image
+        std::vector<std::vector<cv::Point2f>> corners, rejectedCandidates;
+        std::vector<int> ids;
+        detector.detectMarkers(image, corners, ids, rejectedCandidates);
+
+        // std::cout << "Detected marker corners:\n";
+        // for (size_t i = 0; i < corners.size(); ++i) {
+        //     std::cout << "Marker ID: " << ids[i] << "\n";
+        //     for (size_t j = 0; j < corners[i].size(); ++j) {
+        //         std::cout << "Corner " << j << ": (" << corners[i][j].x << ", " << corners[i][j].y << ")\n";
+        //     }
+        // }
+
+        if (ids.empty()) {
+            std::cerr << "No markers detected in image: " << imagePath << std::endl;
+            continue;
+        }
+
+        std::vector<cv::Vec3d> rvecs, tvecs; // ??? the marker's orientation and position relative to the camera.
+        // tvecs: the position of the marker's origin (center) in the camera coordinate system
+        // markerLength=20cm=0.2m
+        // Estimate the pose of each detected marker relative to the camera
+        cv::aruco::estimatePoseSingleMarkers(corners, 0.20, cameraMatrix, distCoeffs, rvecs, tvecs);
+
+        for (size_t i = 0; i < ids.size(); ++i) {
+
+            int detectedMarkerId = ids[i];
+            if (detectedMarkerId > 20) {
+                cv::Vec3d rvec = rvecs[i];
+                cv::Vec3d tvec = tvecs[i];
+
+                std::cout << "Detected marker ID: " << detectedMarkerId << std::endl;
+                std::cout << "Rotation vector: " << rvec << std::endl;
+                std::cout << "Translation vector: " << tvec << std::endl;
+
+                // Create the transformation matrix for the camera pose relative to the marker center
+                cv::Mat T_marker_center_to_camera = createTransformationMatrix(rvec, tvec);
+
+                // Transformation from the center of the marker to the top-left corner
+                cv::Mat T_center_to_topleft = cv::Mat::eye(4, 4, CV_64F);
+                T_center_to_topleft.at<double>(0, 3) = -0.1; // half of marker length (0.2m / 2)
+                T_center_to_topleft.at<double>(1, 3) = 0.1;
+
+                cv::Mat T_marker_topleft_to_camera = T_marker_center_to_camera * T_center_to_topleft.inv();
+
+                if (markerPositions.find(detectedMarkerId) != markerPositions.end()) {
+                    cv::Vec3d markerPosition = markerPositions[detectedMarkerId];
+                    cv::Mat T_topleft_to_global = cv::Mat::eye(4, 4, CV_64F);
+                    T_topleft_to_global.at<double>(0, 3) = markerPosition[0];
+                    T_topleft_to_global.at<double>(1, 3) = markerPosition[1];
+                    T_topleft_to_global.at<double>(2, 3) = markerPosition[2];
+
+                    // Using the known positions of the markers, transform the camera pose to the global coordinate system.
+                    cv::Mat T_camera_to_global = T_topleft_to_global * T_marker_topleft_to_camera.inv();
+
+                    std::cout << "Camera pose in global frame:\n" << T_camera_to_global << std::endl;
+
+                    // Extracts the translation and rotation from the transformation matrix
+                    cv::Vec3d translation(T_camera_to_global.at<double>(0, 3), T_camera_to_global.at<double>(1, 3), T_camera_to_global.at<double>(2, 3));
+                    cv::Mat rotationMatrix = T_camera_to_global(cv::Rect(0, 0, 3, 3));
+
+                    // converts the rotation matrix to a quaternion
+                    cv::Vec4d quaternion = rotationMatrixToQuaternion(rotationMatrix);
+
+                    // writes the pose information to the output file
+                    posesOutput << fs::path(imagePath).stem().string() << " "
+                                << translation[0] << " "
+                                << translation[1] << " "
+                                << translation[2] << " "
+                                << quaternion[0] << " "
+                                << quaternion[1] << " "
+                                << quaternion[2] << " "
+                                << quaternion[3] << "\n";
+                } else {
+                    std::cerr << "Marker ID not found in marker positions." << std::endl;
+                }
+            }
+        }
+
+        // Saves the annotated image
+        std::string outputImagePath = outputDirectory + "/" + imagePath.filename().string();
+        saveAnnotatedImage(image, ids, corners, rvecs, tvecs, cameraMatrix, distCoeffs, outputImagePath);
+    }
+
+    posesOutput.close();
+
+    return 0;
+}
+
+

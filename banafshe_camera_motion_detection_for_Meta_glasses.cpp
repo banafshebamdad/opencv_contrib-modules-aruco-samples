@@ -1,35 +1,37 @@
 /**
- * banafshe_camera_motion_detection.cpp
+ * banafshe_camera_motion_detection_for_Meta_glasses.cpp
  * Banafshe Bamdad
- * Di Jun 13, 2023 08:42:37
+ * Di May 14, 2024 11:08:08
  * A CPP code snippet that uses OpenCV to estimate the motion of a camera with respect to an ArUco marker
- * Usage: g++ -o banafshe_camera_motion_detection banafshe_camera_motion_detection.cpp `pkg-config --cflags --libs opencv4`
+ * Compile: g++ -o banafshe_camera_motion_detection_for_Meta_glasses banafshe_camera_motion_detection_for_Meta_glasses.cpp `pkg-config --cflags --libs opencv4`
  * 
  * Output: The camera translation and rotation in the marker frame are printed for each detected marker
 */
 
-/**
- * cv::Mat: the class in OpenCV used to represent matrices and multi-dimensional arrays.
- * cv::Mat::eye(3, 3, CV_64F): static member function of the cv::Mat class that creates a 3x3 identity matrix of type CV_64F (64-bit floating-point).
-*/
 #include <opencv2/opencv.hpp>
 #include <opencv2/aruco.hpp>
 #include <iostream>
 #include <string>
 
-int main()
-{
+#include <vector>
+#include <map>
+
+
+int main() {
+    // B.B
+    // Neutral elements, I provide the solvePnP function with undistorted images 
+    // that have been processed by the calibration.distort_by_calibration method in the Ariaproject tool.
     cv::Mat cameraMatrix = cv::Mat::eye(3, 3, CV_64F);
     cv::Mat distCoeffs = cv::Mat::zeros(4, 1, CV_64F);
 
-    cv::aruco::Dictionary dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_50);
+    cv::aruco::Dictionary dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_7X7_50);
     cv::aruco::DetectorParameters parameters = cv::aruco::DetectorParameters();
 
     cv::aruco::ArucoDetector detector(dictionary, parameters);
 
-    std::string path = "/home/banafshe/Documents/kimera/colmap_Winti_HB/frames_from_rosbag/";  // Set the path to the frames directory
+    std::string path = "/media/banafshe/c1710f43-f3d3-4655-aa3e-24baac02544e/home/banafshe/Desktop/junk/images/undistorted/";
 
-    cv::String extension = "*.jpg";  // Set the file extension of the frames
+    cv::String extension = "*.png";
 
     cv::String pattern = path + extension;
 
@@ -41,7 +43,6 @@ int main()
     for (const auto& framePath : framePaths) {
         cv::Mat frame = cv::imread(framePath);
         cv::Mat outputImage = frame.clone();
-        // frame.copyTo(outputImage);
 
         if (frame.empty()) {
             std::cerr << "Failed to read frame: " << framePath << std::endl;
@@ -52,23 +53,20 @@ int main()
         std::vector<std::vector<cv::Point2f>> corners, rejectedCandidates;
         std::vector<int> ids;
         
-        //CHGPT  cv::aruco::detectMarkers(frame, dictionary, corners, ids, parameters);
         detector.detectMarkers(frame, corners, ids, rejectedCandidates);
 
-        if (!ids.empty())
-        {
+        if (!ids.empty()) {
             std::vector<cv::Vec3d> rvecs, tvecs;
             /**
              * to estimate the pose (translation and rotation) of ArUco markers based on their detected corners.
-             * 0.24: the size of the markers in meters. 
-             * the rvecs and tvecs vectors will be populated with the rotation and translation vectors, respectively, 
-             * for each detected marker. These vectors provide information about the spatial relationship between the markers and the camera.
+             * 0.2: the size of the markers in meters. 
+             * the rvecs and tvecs vectors will be populated with the rotation and translation vectors, respectively, for each detected marker. 
+             * These vectors provide information about the spatial relationship between the markers and the camera.
              * By estimating the pose of ArUco markers, you can determine the position and orientation of the markers in the camera's coordinate system
             */
-            cv::aruco::estimatePoseSingleMarkers(corners, 0.24, cameraMatrix, distCoeffs, rvecs, tvecs);
+            cv::aruco::estimatePoseSingleMarkers(corners, 0.2, cameraMatrix, distCoeffs, rvecs, tvecs);
 
-            for (size_t i = 0; i < ids.size(); ++i)
-            {
+            for (size_t i = 0; i < ids.size(); ++i) {
                 // 0.1: It is the length of the axis lines in meters.
                 cv::drawFrameAxes(outputImage, cameraMatrix, distCoeffs, rvecs[i], tvecs[i], 0.1);
 
@@ -93,7 +91,7 @@ int main()
                  * cv::Rect(3, 0, 1, 3): defines a rectangle region within the markerToCamera matrix. 
                  * The rectangle specifies the top-left corner coordinates (3, 0) and the width and height (1, 3) of the region.
                 */
-                std::cout << "Hello, world!" << tvecs[i] << std::endl;
+                std::cout << "ID: " << ids[i] << "\ntvecs: " << tvecs[i] << std::endl;
 
                 // B.B convert std::vector<cv::Vec3d> to a cv::Mat
                 cv::Mat mat(3, 1, CV_64FC1);
